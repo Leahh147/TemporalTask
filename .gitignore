@@ -56,8 +56,5 @@ Icon?
 ehthumbs.db
 Thumbs.db
 
-# Version control
-.git/
-
 # Temporary autosaves
 AutoSave_*
