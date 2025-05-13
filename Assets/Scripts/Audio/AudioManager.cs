@@ -42,7 +42,7 @@ public class AudioManager : MonoBehaviour
             m_Clips.Add(audioClip);
             Debug.Log("Loaded audio clip: " + audioClip.name);
         }
-        StartCoroutine(PlayAudioClip()); // form an infinite loop
+        // StartCoroutine(PlayAudioClip()); // form an infinite loop
 
         // m_AudioSource.position = transform.position; // leave it for uitb??
     }

@@ -12,8 +12,6 @@ namespace UserInTheBox
         public GameObject targetObject;
         public float targetSize = 0.1f;
         public Color defaultColor = Color.white;
-        public Color activateColor = Color.green;
-        public Color deactivateColor = Color.red;
         
         [Header("Task Parameters")]
         public float episodeLength = 60f;
@@ -23,28 +21,33 @@ namespace UserInTheBox
         public float responseTimeWindow = 0.8f;
         
         [Header("Audio Settings")]
-        public AudioClip activateCueSound;
-        public AudioClip deactivateCueSound;
+        public AudioClip audioCueSound;
         public float audioVolume = 0.7f;
-        
-        [Header("Sensory Mode")]
-        public bool useAudioCues = true;
-        public bool useVisualCues = true;
+
+        [Header("Reward Settings")]
+        public bool useDenseReward = true;
+        public float missedResponsePenalty = 0.2f;
         
         // Internal state
-        private List<CueEvent> _cueEvents = new List<CueEvent>();
+        private List<float> _cueTimestamps = new List<float>();
         private int _currentCueIndex = 0;
         private float _episodeTimer = 0f;
         private bool _isInResponseWindow = false;
-        private CueType _currentCueType;
         private float _responseWindowEndTime = 0f;
         private int _correctResponses = 0;
         private int _totalResponses = 0;
         private bool _isRunning = false;
-        private int _successfulActivates = 0;
-        private int _successfulDeactivates = 0;
-        private int _failedActivates = 0;
-        private int _failedDeactivates = 0;
+        private int _successfulTouches = 0;
+        private int _missedTouches = 0;
+        private float _distanceReward = 0.0f;
+        private float _previousPoints = 0;
+        private float _unsuccessfulContactReward = 0.0f;
+        private Vector3 _lastHandPosition;
+        private float _effortCost = 0.0f;
+        private string _condition;
+        private bool _denseGameReward;
+        private int _fixedSeed;
+        private bool _debug;
         
         // Components
         private AudioSource _audioSource;
@@ -54,108 +57,118 @@ namespace UserInTheBox
         
         public override void InitialiseGame()
         {
-            // Log task configuration
-            Debug.Log("Initializing Temporal Task with audio mode: " + useAudioCues + ", visual mode: " + useVisualCues);
-            
-            // Set up audio source
-            _audioSource = GetComponent<AudioSource>();
-            if (_audioSource == null)
+            // Check if debug mode is enabled
+            _debug = Application.isEditor;  //UitBUtils.GetOptionalArgument("debug");
+
+            // Get game variant and level
+            if (!_debug)
             {
-                _audioSource = gameObject.AddComponent<AudioSource>();
-                _audioSource.spatialize = true;
-                _audioSource.spatialBlend = 1.0f; // Full 3D sound
-                _audioSource.minDistance = 0.1f;
-                _audioSource.maxDistance = 5.0f;
-            }
-            
-            // Find target renderer and prepare
-            if (targetObject != null)
-            {
-                _targetRenderer = targetObject.GetComponent<Renderer>();
-                if (_targetRenderer != null)
+                _condition = UitBUtils.GetKeywordArgument("condition");
+                _logging = UitBUtils.GetOptionalArgument("logging");
+                _denseGameReward = !UitBUtils.GetOptionalArgument("sparse");
+                if (_denseGameReward)
                 {
-                    targetObject.transform.localScale = Vector3.one * targetSize;
-                    _targetMaterial = _targetRenderer.material;
-                    _targetMaterial.color = defaultColor;
+                    Debug.Log("Dense game reward enabled");
                 }
                 else
                 {
-                    Debug.LogError("Target object does not have a renderer component");
+                    Debug.Log("Sparse game reward enabled");
+                }
+
+                string fixedSeed = UitBUtils.GetOptionalKeywordArgument("fixedSeed", "0");
+                // Try to parse given fixed seed string to int
+                if (!Int32.TryParse(fixedSeed, out _fixedSeed))
+                {
+                    Debug.Log("Couldn't parse fixed seed from given value, using default 0");
+                    _fixedSeed = 0;
+                }
+
+            }
+            else
+            {
+                _condition = "easy";  // set to easy for debugging;
+                _denseGameReward = true;
+                _fixedSeed = 0;
+                _logging = false;
+                simulatedUser.audioModeOn = true;
+                if (simulatedUser.audioModeOn) {
+                    audioManager.SignalType = "Mono";
+                    audioManager.SampleType = "Amplitude";
+                    Debug.Log("Audio mode on, using signal type " + audioManager.SignalType + " and sample type " + audioManager.SampleType);
                 }
             }
-            else
-            {
-                Debug.LogError("Target object not assigned");
-            }
+            Debug.Log("RLEnv set to condition " + _condition);
+            // Log task configuration
+            // Debug.Log("Initializing Audio-Only Temporal Task");
             
-            // Get interaction point transform (fingertip)
-            if (simulatedUser != null)
-            {
-                // Use the right hand controller as the interaction point
-                _interactionPointTransform = simulatedUser.rightHandController;
-                Debug.Log("Using right controller as interaction point");
-            }
-            else
-            {
-                Debug.LogError("SimulatedUser reference is missing");
-            }
+            // // Set up audio source
+            // _audioSource = GetComponent<AudioSource>();
+            // if (_audioSource == null)
+            // {
+            //     _audioSource = gameObject.AddComponent<AudioSource>();
+            //     _audioSource.spatialize = false;  // Disable spatial audio
+            //     _audioSource.spatialBlend = 0.0f; // 2D sound
+            // }
             
-            // Enable logging
-            _logging = true;
+            // // Find target renderer and prepare
+            // if (targetObject != null)
+            // {
+            //     _targetRenderer = targetObject.GetComponent<Renderer>();
+            //     if (_targetRenderer != null)
+            //     {
+            //         targetObject.transform.localScale = Vector3.one * targetSize;
+            //         _targetMaterial = _targetRenderer.material;
+            //         _targetMaterial.color = defaultColor;
+            //     }
+            //     else
+            //     {
+            //         Debug.LogError("Target object does not have a renderer component");
+            //     }
+            // }
+            // else
+            // {
+            //     Debug.LogError("Target object not assigned");
+            // }
             
-            // Initialize log dictionary
-            _logDict = new Dictionary<string, object>
-            {
-                { "CorrectResponses", 0 },
-                { "TotalResponses", 0 },
-                { "SuccessRate", 0.0f },
-                { "SuccessfulActivates", 0 },
-                { "SuccessfulDeactivates", 0 },
-                { "FailedActivates", 0 },
-                { "FailedDeactivates", 0 }
-            };
+            // // Get interaction point transform
+            // if (simulatedUser != null)
+            // {
+            //     // Use the right hand controller as the interaction point
+            //     _interactionPointTransform = simulatedUser.rightHandController;
+            //     Debug.Log("Using right controller as interaction point");
+            // }
+            // else
+            // {
+            //     Debug.LogError("SimulatedUser reference is missing");
+            // }
             
-            // Log audio/vision modes once in initialization
-            Debug.Log($"Task Configuration - Audio: {useAudioCues}, Visual: {useVisualCues}");
+            // // Enable logging
+            // _logging = true;
+            
+            // // Initialize log dictionary - keep only these five keys
+            // _logDict = new Dictionary<string, object>
+            // {
+            //     { "Points", 0 },
+            //     { "RewardUnsuccessfulContact", 0.0f },
+            //     { "DistanceReward", 0.0f },
+            //     { "EffortCost", 0.0f },
+            //     { "failrateTarget0", 0.0f }
+            // };
 
             // Check for command line arguments
-            ParseCommandLineArguments();
+            // ParseCommandLineArguments();
         }
 
-        private void ParseCommandLineArguments()
-        {
-            // Read audio mode from command line if provided
-            string audioModeArg = UitBUtils.GetOptionalKeywordArgument("audioMode", "");
-            if (!string.IsNullOrEmpty(audioModeArg))
-            {
-                if (audioModeArg == "audio")
-                {
-                    useAudioCues = true;
-                    useVisualCues = false;
-                    Debug.Log("Setting to audio-only mode from command line");
-                }
-                else if (audioModeArg == "visual")
-                {
-                    useAudioCues = false;
-                    useVisualCues = true;
-                    Debug.Log("Setting to visual-only mode from command line");
-                }
-                else if (audioModeArg == "both")
-                {
-                    useAudioCues = true;
-                    useVisualCues = true;
-                    Debug.Log("Setting to combined audio-visual mode from command line");
-                }
-            }
-
-            // Check if we should use a fixed seed
-            string seedArg = UitBUtils.GetOptionalKeywordArgument("fixedSeed", "0");
-            if (int.TryParse(seedArg, out int seed) && seed != 0)
-            {
-                UnityEngine.Random.InitState(seed);
-                Debug.Log("Using fixed random seed: " + seed);
-            }
-        }
+        // private void ParseCommandLineArguments()
+        // {
+        //     // Check if we should use a fixed seed
+        //     string seedArg = UitBUtils.GetOptionalKeywordArgument("fixedSeed", "0");
+        //     if (int.TryParse(seedArg, out int seed) && seed != 0)
+        //     {
+        //         UnityEngine.Random.InitState(seed);
+        //         Debug.Log("Using fixed random seed: " + seed);
+        //     }
+        // }
         
         public override void InitialiseReward()
         {
@@ -164,10 +177,13 @@ namespace UserInTheBox
             _episodeTimer = 0f;
             _correctResponses = 0;
             _totalResponses = 0;
-            _successfulActivates = 0;
-            _successfulDeactivates = 0;
-            _failedActivates = 0;
-            _failedDeactivates = 0;
+            _successfulTouches = 0;
+            _missedTouches = 0;
+            _distanceReward = 0.0f;
+            _previousPoints = 0;
+            _unsuccessfulContactReward = 0.0f;
+            _effortCost = 0.0f;
+            _lastHandPosition = _interactionPointTransform != null ? _interactionPointTransform.position : Vector3.zero;
         }
         
         protected override void CalculateReward()
@@ -179,17 +195,17 @@ namespace UserInTheBox
             _episodeTimer += Time.deltaTime;
             
             // Check if we need to trigger the next cue
-            if (_currentCueIndex < _cueEvents.Count && 
-                _episodeTimer >= _cueEvents[_currentCueIndex].timeStamp)
+            if (_currentCueIndex < _cueTimestamps.Count && 
+                _episodeTimer >= _cueTimestamps[_currentCueIndex])
             {
-                TriggerCue(_cueEvents[_currentCueIndex]);
+                TriggerCue();
                 _currentCueIndex++;
             }
             
             // Default reward is zero
             _reward = 0f;
             
-            // Check if in response window
+            // Primary reward logic for correct responses
             if (_isInResponseWindow)
             {
                 // Check if time window has expired
@@ -198,16 +214,11 @@ namespace UserInTheBox
                     // Failed to respond in time
                     _isInResponseWindow = false;
                     _totalResponses++;
+                    _missedTouches++;
                     
-                    // Record failure based on cue type
-                    if (_currentCueType == CueType.Activate)
-                    {
-                        _failedActivates++;
-                    }
-                    else
-                    {
-                        _failedDeactivates++;
-                    }
+                    // Small negative reward for missed response
+                    if (useDenseReward)
+                        _reward -= missedResponsePenalty;
                     
                     UpdateSuccessMetrics();
                 }
@@ -215,27 +226,19 @@ namespace UserInTheBox
                 {
                     bool isInsideTarget = IsInsideTarget();
                     
-                    // Check if player is in correct position based on cue type
-                    if ((_currentCueType == CueType.Activate && isInsideTarget) ||
-                        (_currentCueType == CueType.Deactivate && !isInsideTarget))
+                    // If the agent touches the target during the response window, give reward
+                    if (isInsideTarget)
                     {
-                        // Correct position - give reward
-                        _reward = 1.0f;
-                        
                         // Record correct response (just once per cue)
                         if (_isInResponseWindow)
                         {
                             _correctResponses++;
+                            _successfulTouches++;
                             
-                            // Record success based on cue type
-                            if (_currentCueType == CueType.Activate)
-                            {
-                                _successfulActivates++;
-                            }
-                            else
-                            {
-                                _successfulDeactivates++;
-                            }
+                            // Update Points for whacamole compatibility
+                            _logDict["Points"] = _correctResponses;
+                            _reward = (_correctResponses - _previousPoints) * 10;
+                            _previousPoints = _correctResponses;
                             
                             _isInResponseWindow = false;
                             _totalResponses++;
@@ -245,11 +248,87 @@ namespace UserInTheBox
                 }
             }
             
+            // Add dense spatial reward component if enabled
+            if (useDenseReward)
+            {
+                // Distance reward
+                _distanceReward = CalculateDistanceReward();
+                _reward += _distanceReward;
+                _logDict["DistanceReward"] = _distanceReward;
+                
+                // Unsuccessful contact reward (when not in response window)
+                if (_interactionPointTransform != null && !_isInResponseWindow && targetObject != null)
+                {
+                    // Check if close to but not inside target
+                    float distance = Vector3.Distance(_interactionPointTransform.position, targetObject.transform.position);
+                    float targetRadius = targetSize / 2.0f;
+                    if (distance < targetRadius * 1.5f && distance >= targetRadius)
+                    {
+                        // Calculate velocity (simplified)
+                        Vector3 currentPos = _interactionPointTransform.position;
+                        Vector3 velocity = Vector3.zero;
+                        
+                        if (_lastHandPosition != Vector3.zero)
+                        {
+                            velocity = (currentPos - _lastHandPosition) / Time.deltaTime;
+                        }
+                        
+                        _unsuccessfulContactReward = velocity.magnitude * 0.01f;
+                        _reward += _unsuccessfulContactReward;
+                        _logDict["RewardUnsuccessfulContact"] = _unsuccessfulContactReward;
+                    }
+                    else
+                    {
+                        _logDict["RewardUnsuccessfulContact"] = 0.0f;
+                    }
+                }
+                
+                // Calculate effort cost
+                if (_interactionPointTransform != null)
+                {
+                    Vector3 currentPos = _interactionPointTransform.position;
+                    if (_lastHandPosition != Vector3.zero)
+                    {
+                        Vector3 movement = currentPos - _lastHandPosition;
+                        _effortCost = movement.magnitude * 0.05f;
+                        _lastHandPosition = currentPos;
+                    }
+                    else
+                    {
+                        _effortCost = 0.0f;
+                        _lastHandPosition = _interactionPointTransform.position;
+                    }
+                    
+                    _logDict["EffortCost"] = _effortCost;
+                }
+            }
+            
             // Check if episode is over
             if (_episodeTimer >= episodeLength)
             {
                 EndEpisode();
             }
+        }
+
+        // Calculate distance-based reward to encourage proximity to target
+        private float CalculateDistanceReward()
+        {
+            if (_interactionPointTransform == null || targetObject == null)
+                return 0f;
+                
+            // Calculate distance between hand and target
+            float distance = Vector3.Distance(_interactionPointTransform.position, targetObject.transform.position);
+            
+            // Convert to a reward using an exponential decay function
+            // This gives higher rewards for being closer to the target
+            return _distRewardFunc(distance);
+        }
+
+        private float _distRewardFunc(float distance)
+        {
+            // Using the Whacamole formulation: (exp(-10*dist)-1)/10
+            // This gives a steeper reward curve that approaches 0 asymptotically
+            return (float)(Math.Exp(-10 * distance) - 1) / 10;
         }
         
         public override void UpdateIsFinished()
@@ -270,32 +349,24 @@ namespace UserInTheBox
             // Generate cue events
             GenerateCueEvents();
             
-            // Reset target color
-            if (_targetRenderer != null)
-            {
-                _targetMaterial.color = defaultColor;
-            }
-            
             // Start episode
             _isRunning = true;
             _currentCueIndex = 0;
             _episodeTimer = 0f;
             
-            // Reset logging dictionary
-            _logDict["CorrectResponses"] = 0;
-            _logDict["TotalResponses"] = 0;
-            _logDict["SuccessRate"] = 0.0f;
-            _logDict["SuccessfulActivates"] = 0;
-            _logDict["SuccessfulDeactivates"] = 0;
-            _logDict["FailedActivates"] = 0;
-            _logDict["FailedDeactivates"] = 0;
+            // Reset logging dictionary - only the five required keys
+            _logDict["Points"] = 0;
+            _logDict["RewardUnsuccessfulContact"] = 0.0f;
+            _logDict["DistanceReward"] = 0.0f;
+            _logDict["EffortCost"] = 0.0f;
+            _logDict["failrateTarget0"] = 0.0f;
 
-            Debug.Log("Temporal Task Reset: Audio mode: " + useAudioCues + ", Visual mode: " + useVisualCues);
+            Debug.Log("Audio-Only Temporal Task Reset");
         }
         
         private void GenerateCueEvents()
         {
-            _cueEvents.Clear();
+            _cueTimestamps.Clear();
             float currentTime = minCueInterval; // Start with initial delay
             
             for (int i = 0; i < cuesToGenerate; i++)
@@ -307,74 +378,31 @@ namespace UserInTheBox
                 if (currentTime >= episodeLength)
                     break;
                 
-                // Randomly choose between activate and deactivate
-                CueType cueType = UnityEngine.Random.value > 0.5f ? CueType.Activate : CueType.Deactivate;
-                
-                // Create and add the cue event
-                CueEvent cueEvent = new CueEvent
-                {
-                    timeStamp = currentTime,
-                    cueType = cueType
-                };
-                
-                _cueEvents.Add(cueEvent);
+                // Add the timestamp
+                _cueTimestamps.Add(currentTime);
             }
 
-            Debug.Log("Generated " + _cueEvents.Count + " cue events for the episode");
+            Debug.Log("Generated " + _cueTimestamps.Count + " audio cues for the episode");
         }
         
-        private void TriggerCue(CueEvent cue)
+        private void TriggerCue()
         {
-            // Play audio cue if enabled
-            if (useAudioCues)
+            // Play audio cue
+            if (audioCueSound != null && _audioSource != null)
             {
-                AudioClip clipToPlay = (cue.cueType == CueType.Activate) ? 
-                    activateCueSound : deactivateCueSound;
-                    
-                if (clipToPlay != null && _audioSource != null)
-                {
-                    _audioSource.PlayOneShot(clipToPlay, audioVolume);
-                    Debug.Log("Playing audio cue: " + cue.cueType + " at time " + _episodeTimer);
-                }
-            }
-            
-            // Show visual cue if enabled
-            if (useVisualCues && _targetRenderer != null)
-            {
-                Color newColor = (cue.cueType == CueType.Activate) ? 
-                    activateColor : deactivateColor;
-                    
-                _targetMaterial.color = newColor;
-                Debug.Log("Showing visual cue: " + cue.cueType + " at time " + _episodeTimer);
-                
-                // Reset color after a short delay
-                StartCoroutine(ResetTargetColor(0.5f));
+                _audioSource.PlayOneShot(audioCueSound, audioVolume);
+                Debug.Log("Playing audio cue at time " + _episodeTimer);
             }
             
             // Start response window
             _isInResponseWindow = true;
-            _currentCueType = cue.cueType;
             _responseWindowEndTime = Time.time + responseTimeWindow;
-        }
-        
-        private IEnumerator ResetTargetColor(float delay)
-        {
-            yield return new WaitForSeconds(delay);
-            if (_targetRenderer != null)
-            {
-                _targetMaterial.color = defaultColor;
-            }
         }
         
         private void EndEpisode()
         {
             _isRunning = false;
             
-            if (_targetRenderer != null)
-            {
-                _targetMaterial.color = defaultColor;
-            }
-
             Debug.Log("Temporal Task Episode ended - Correct responses: " + _correctResponses + 
                       "/" + _totalResponses + " (" + (_totalResponses > 0 ? (float)_correctResponses / _totalResponses * 100 : 0) + "%)");
         }
@@ -393,28 +421,8 @@ namespace UserInTheBox
         
         private void UpdateSuccessMetrics()
         {
-            // Update log dictionary with current success metrics
-            _logDict["CorrectResponses"] = _correctResponses;
-            _logDict["TotalResponses"] = _totalResponses;
-            _logDict["SuccessRate"] = _totalResponses > 0 ? (float)_correctResponses / _totalResponses : 0.0f;
-            _logDict["SuccessfulActivates"] = _successfulActivates;
-            _logDict["SuccessfulDeactivates"] = _successfulDeactivates;
-            _logDict["FailedActivates"] = _failedActivates;
-            _logDict["FailedDeactivates"] = _failedDeactivates;
+            // Update only the failrateTarget0 since Points is updated directly in CalculateReward
+            _logDict["failrateTarget0"] = _totalResponses > 0 ? (float)_missedTouches / _totalResponses : 0.0f;
         }
-    }
-
-    // Enum for cue types
-    public enum CueType
-    {
-        Activate,  // Player should be inside target
-        Deactivate // Player should be outside target
-    }
-
-    // Structure to hold cue information
-    public struct CueEvent
-    {
-        public float timeStamp;
-        public CueType cueType;
     }
 }

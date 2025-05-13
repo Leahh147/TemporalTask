@@ -469,7 +469,6 @@ namespace TemporalTask.Audio
         public void OnValidate()
         {
             // UpdateSettings();
-            Debug.Log("OnValidate");
         }
 
         public void UpdateSettings()
