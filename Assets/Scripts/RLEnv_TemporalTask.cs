@@ -44,7 +44,6 @@ namespace UserInTheBox
         private float _unsuccessfulContactReward = 0.0f;
         private Vector3 _lastHandPosition;
         private float _effortCost = 0.0f;
-        private string _condition;
         private bool _denseGameReward;
         private int _fixedSeed;
         private bool _debug;
@@ -63,7 +62,6 @@ namespace UserInTheBox
             // Get game variant and level
             if (!_debug)
             {
-                _condition = UitBUtils.GetKeywordArgument("condition");
                 _logging = UitBUtils.GetOptionalArgument("logging");
                 _denseGameReward = !UitBUtils.GetOptionalArgument("sparse");
                 if (_denseGameReward)
@@ -86,7 +84,6 @@ namespace UserInTheBox
             }
             else
             {
-                _condition = "easy";  // set to easy for debugging;
                 _denseGameReward = true;
                 _fixedSeed = 0;
                 _logging = false;
@@ -97,78 +94,7 @@ namespace UserInTheBox
                     Debug.Log("Audio mode on, using signal type " + audioManager.SignalType + " and sample type " + audioManager.SampleType);
                 }
             }
-            Debug.Log("RLEnv set to condition " + _condition);
-            // Log task configuration
-            // Debug.Log("Initializing Audio-Only Temporal Task");
-            
-            // // Set up audio source
-            // _audioSource = GetComponent<AudioSource>();
-            // if (_audioSource == null)
-            // {
-            //     _audioSource = gameObject.AddComponent<AudioSource>();
-            //     _audioSource.spatialize = false;  // Disable spatial audio
-            //     _audioSource.spatialBlend = 0.0f; // 2D sound
-            // }
-            
-            // // Find target renderer and prepare
-            // if (targetObject != null)
-            // {
-            //     _targetRenderer = targetObject.GetComponent<Renderer>();
-            //     if (_targetRenderer != null)
-            //     {
-            //         targetObject.transform.localScale = Vector3.one * targetSize;
-            //         _targetMaterial = _targetRenderer.material;
-            //         _targetMaterial.color = defaultColor;
-            //     }
-            //     else
-            //     {
-            //         Debug.LogError("Target object does not have a renderer component");
-            //     }
-            // }
-            // else
-            // {
-            //     Debug.LogError("Target object not assigned");
-            // }
-            
-            // // Get interaction point transform
-            // if (simulatedUser != null)
-            // {
-            //     // Use the right hand controller as the interaction point
-            //     _interactionPointTransform = simulatedUser.rightHandController;
-            //     Debug.Log("Using right controller as interaction point");
-            // }
-            // else
-            // {
-            //     Debug.LogError("SimulatedUser reference is missing");
-            // }
-            
-            // // Enable logging
-            // _logging = true;
-            
-            // // Initialize log dictionary - keep only these five keys
-            // _logDict = new Dictionary<string, object>
-            // {
-            //     { "Points", 0 },
-            //     { "RewardUnsuccessfulContact", 0.0f },
-            //     { "DistanceReward", 0.0f },
-            //     { "EffortCost", 0.0f },
-            //     { "failrateTarget0", 0.0f }
-            // };
-
-            // Check for command line arguments
-            // ParseCommandLineArguments();
         }
-
-        // private void ParseCommandLineArguments()
-        // {
-        //     // Check if we should use a fixed seed
-        //     string seedArg = UitBUtils.GetOptionalKeywordArgument("fixedSeed", "0");
-        //     if (int.TryParse(seedArg, out int seed) && seed != 0)
-        //     {
-        //         UnityEngine.Random.InitState(seed);
-        //         Debug.Log("Using fixed random seed: " + seed);
-        //     }
-        // }
         
         public override void InitialiseReward()
         {
