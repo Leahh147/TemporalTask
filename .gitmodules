@@ -1,3 +1,4 @@
 [submodule "Assets/sim2vr"]
-	path = Assets/sim2vr
-	url = https://github.com/Leahh147/sim2vr.git
+    path = Assets/sim2vr
+    url = https://github.com/Leahh147/sim2vr.git
+	branch = temporal_task
