@@ -10,8 +10,9 @@ namespace UserInTheBox
     {
         [Header("Target Settings")]
         public GameObject targetObject;
-        public float targetSize = 0.1f;
+        public float targetSize = 0.05f;  // This is the diameter (2x the 0.025f radius in WhacAMole)
         public Color defaultColor = Color.white;
+        public Vector3 targetPosition = new Vector3(0.15f, -0.1f, 0.4f);
         
         [Header("Task Parameters")]
         public float episodeLength = 60f;
@@ -94,6 +95,28 @@ namespace UserInTheBox
                     Debug.Log("Audio mode on, using signal type " + audioManager.SignalType + " and sample type " + audioManager.SampleType);
                 }
             }
+            
+            // Find target renderer and prepare
+            if (targetObject != null)
+            {
+                _targetRenderer = targetObject.GetComponent<Renderer>();
+                if (_targetRenderer != null)
+                {
+                    _targetMaterial = _targetRenderer.material;
+                    _targetMaterial.color = defaultColor;
+                    
+                    // Position the target
+                    PositionTarget();
+                }
+                else
+                {
+                    Debug.LogWarning("Target object does not have a Renderer component");
+                }
+            }
+            else
+            {
+                Debug.LogWarning("Target object is not assigned");
+            }
         }
         
         public override void InitialiseReward()
@@ -147,6 +170,9 @@ namespace UserInTheBox
                         _reward -= missedResponsePenalty;
                     
                     UpdateSuccessMetrics();
+                    
+                    // Hide target after missed response
+                    SetTargetVisible(false);
                 }
                 else
                 {
@@ -169,6 +195,9 @@ namespace UserInTheBox
                             _isInResponseWindow = false;
                             _totalResponses++;
                             UpdateSuccessMetrics();
+                            
+                            // Hide target after successful touch
+                            SetTargetVisible(false);
                         }
                     }
                 }
@@ -275,6 +304,10 @@ namespace UserInTheBox
             // Generate cue events
             GenerateCueEvents();
             
+            // Position the target but keep it hidden until first cue
+            PositionTarget();
+            SetTargetVisible(false);
+            
             // Start episode
             _isRunning = true;
             _currentCueIndex = 0;
@@ -297,14 +330,11 @@ namespace UserInTheBox
             
             for (int i = 0; i < cuesToGenerate; i++)
             {
-                // Add random time interval
                 currentTime += UnityEngine.Random.Range(minCueInterval, maxCueInterval);
                 
-                // Ensure the cue fits within episode length
                 if (currentTime >= episodeLength)
                     break;
                 
-                // Add the timestamp
                 _cueTimestamps.Add(currentTime);
             }
 
@@ -313,14 +343,15 @@ namespace UserInTheBox
         
         private void TriggerCue()
         {
-            // Play audio cue
             if (audioCueSound != null && _audioSource != null)
             {
                 _audioSource.PlayOneShot(audioCueSound, audioVolume);
                 Debug.Log("Playing audio cue at time " + _episodeTimer);
             }
             
-            // Start response window
+            SetTargetVisible(true);
+            PositionTarget();
+            
             _isInResponseWindow = true;
             _responseWindowEndTime = Time.time + responseTimeWindow;
         }
@@ -333,13 +364,11 @@ namespace UserInTheBox
                       "/" + _totalResponses + " (" + (_totalResponses > 0 ? (float)_correctResponses / _totalResponses * 100 : 0) + "%)");
         }
         
-        // Check if interaction point is inside target
         private bool IsInsideTarget()
         {
             if (_interactionPointTransform == null || targetObject == null)
                 return false;
                 
-            // Simple distance check
             float distance = Vector3.Distance(_interactionPointTransform.position, targetObject.transform.position);
             float targetRadius = targetSize / 2.0f;
             return distance < targetRadius;
@@ -347,8 +376,28 @@ namespace UserInTheBox
         
         private void UpdateSuccessMetrics()
         {
-            // Update only the failrateTarget0 since Points is updated directly in CalculateReward
             _logDict["failrateTarget0"] = _totalResponses > 0 ? (float)_missedTouches / _totalResponses : 0.0f;
+        }
+
+        public void PositionTarget()
+        {
+            if (targetObject != null)
+            {
+                targetObject.transform.position = targetPosition;
+                
+                targetObject.transform.localScale = Vector3.one * targetSize;
+                
+                Debug.Log($"Target positioned at {targetPosition} with size {targetSize}");
+            }
+        }
+
+        private void SetTargetVisible(bool visible)
+        {
+            if (targetObject != null && _targetRenderer != null)
+            {
+                _targetRenderer.enabled = visible;
+                Debug.Log($"Target visibility set to {visible}");
+            }
         }
     }
 }
