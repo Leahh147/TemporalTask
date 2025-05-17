@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UserInTheBox;
@@ -8,84 +7,59 @@ namespace UserInTheBox
 {
     public class RLEnv_TemporalTask : RLEnv
     {
-        [Header("Target Settings")]
-        public GameObject targetObject;
-        public float targetSize = 0.05f;  // This is the diameter (2x the 0.025f radius in WhacAMole)
-        public Color defaultColor = Color.white;
-        public Vector3 targetPosition = new Vector3(0.15f, -0.1f, 0.4f);
-        
         [Header("Task Parameters")]
-        public float episodeLength = 60f;
-        public float minCueInterval = 1.5f;
-        public float maxCueInterval = 4.0f;
-        public int cuesToGenerate = 15;
-        public float responseTimeWindow = 0.8f;
+        public float episodeLength = 5f;       // 5 second episodes
+        public float minCueTime = 0f;          // Earliest cue at 0 second
+        public float maxCueTime = 3f;          // Latest cue at 3 seconds
+        public float requiredMovementDistance = 0.4f; // Required Z-direction movement
+        public float movementThreshold = 0.001f; // Threshold for detecting early movement
         
         [Header("Audio Settings")]
         public AudioClip audioCueSound;
         public float audioVolume = 0.7f;
 
         [Header("Reward Settings")]
-        public bool useDenseReward = true;
-        public float missedResponsePenalty = 0.2f;
+        public float successReward = 10f;        // Reward for successful movement
+        public float earlyMovementPenalty = 5f;  // Penalty for moving before cue
         
         // Internal state
-        private List<float> _cueTimestamps = new List<float>();
-        private int _currentCueIndex = 0;
+        private float _cueTimestamp;
         private float _episodeTimer = 0f;
-        private bool _isInResponseWindow = false;
-        private float _responseWindowEndTime = 0f;
+        private bool _cueTriggered = false;
+        private bool _movementCompleted = false;
+        private bool _earlyMovementDetected = false;
+        private bool _isRunning = false;
         private int _correctResponses = 0;
         private int _totalResponses = 0;
-        private bool _isRunning = false;
-        private int _successfulTouches = 0;
-        private int _missedTouches = 0;
-        private float _distanceReward = 0.0f;
-        private float _previousPoints = 0;
-        private float _unsuccessfulContactReward = 0.0f;
-        private Vector3 _lastHandPosition;
-        private float _effortCost = 0.0f;
-        private bool _denseGameReward;
+        private int _earlyMovements = 0;
+        private Vector3 _initialHandPosition;
         private int _fixedSeed;
         private bool _debug;
+        private Vector3 _restPosition; // The "home" position where the hand should return
         
         // Components
         private AudioSource _audioSource;
-        private Renderer _targetRenderer;
         private Transform _interactionPointTransform;
-        private Material _targetMaterial;
         
         public override void InitialiseGame()
         {
             // Check if debug mode is enabled
-            _debug = Application.isEditor;  //UitBUtils.GetOptionalArgument("debug");
+            _debug = Application.isEditor;
 
             // Get game variant and level
             if (!_debug)
             {
                 _logging = UitBUtils.GetOptionalArgument("logging");
-                _denseGameReward = !UitBUtils.GetOptionalArgument("sparse");
-                if (_denseGameReward)
-                {
-                    Debug.Log("Dense game reward enabled");
-                }
-                else
-                {
-                    Debug.Log("Sparse game reward enabled");
-                }
-
+                
                 string fixedSeed = UitBUtils.GetOptionalKeywordArgument("fixedSeed", "0");
-                // Try to parse given fixed seed string to int
                 if (!Int32.TryParse(fixedSeed, out _fixedSeed))
                 {
                     Debug.Log("Couldn't parse fixed seed from given value, using default 0");
                     _fixedSeed = 0;
                 }
-
             }
             else
             {
-                _denseGameReward = true;
                 _fixedSeed = 0;
                 _logging = false;
                 simulatedUser.audioModeOn = true;
@@ -96,43 +70,65 @@ namespace UserInTheBox
                 }
             }
             
-            // Find target renderer and prepare
-            if (targetObject != null)
+            // Set up audio source
+            _audioSource = GetComponent<AudioSource>();
+            if (_audioSource == null)
             {
-                _targetRenderer = targetObject.GetComponent<Renderer>();
-                if (_targetRenderer != null)
+                _audioSource = gameObject.AddComponent<AudioSource>();
+                _audioSource.spatialize = false;
+                _audioSource.spatialBlend = 0.0f;
+                _audioSource.playOnAwake = false; // Ensure this is false
+                _audioSource.loop = false;        // Ensure this is false
+                _audioSource.volume = 1.0f;       // Set a default volume
+                
+                Debug.Log("Created new AudioSource with playOnAwake=false");
+            }
+            else
+            {
+                _audioSource.playOnAwake = false;
+                _audioSource.loop = false;
+                Debug.Log("Using existing AudioSource, set playOnAwake=false");
+            }
+            
+            // Get interaction point transform
+            if (simulatedUser != null)
+            {
+                _interactionPointTransform = simulatedUser.rightHandController;
+                Debug.Log("Using right controller as interaction point");
+                
+                // Capture initial position as rest position (only once on game start)
+                if (_restPosition == Vector3.zero)
                 {
-                    _targetMaterial = _targetRenderer.material;
-                    _targetMaterial.color = defaultColor;
-                    
-                    // Position the target
-                    PositionTarget();
-                }
-                else
-                {
-                    Debug.LogWarning("Target object does not have a Renderer component");
+                    _restPosition = _interactionPointTransform.position;
+                    Debug.Log($"Rest position set to {_restPosition}");
                 }
             }
             else
             {
-                Debug.LogWarning("Target object is not assigned");
+                Debug.LogError("SimulatedUser reference is missing");
             }
+            
+            // Initialize log dictionary
+            _logDict = new Dictionary<string, object>
+            {
+                { "Points", 0 },
+                { "failrateTarget0", 0.0f }
+            };
         }
         
         public override void InitialiseReward()
         {
             _reward = 0.0f;
-            _isInResponseWindow = false;
+            _cueTriggered = false;
+            _movementCompleted = false;
+            _earlyMovementDetected = false;
             _episodeTimer = 0f;
-            _correctResponses = 0;
-            _totalResponses = 0;
-            _successfulTouches = 0;
-            _missedTouches = 0;
-            _distanceReward = 0.0f;
-            _previousPoints = 0;
-            _unsuccessfulContactReward = 0.0f;
-            _effortCost = 0.0f;
-            _lastHandPosition = _interactionPointTransform != null ? _interactionPointTransform.position : Vector3.zero;
+            
+            if (_interactionPointTransform != null)
+            {
+                // Use the stored rest position instead of current position
+                _initialHandPosition = _restPosition;
+            }
         }
         
         protected override void CalculateReward()
@@ -143,118 +139,73 @@ namespace UserInTheBox
             // Update timer
             _episodeTimer += Time.deltaTime;
             
-            // Check if we need to trigger the next cue
-            if (_currentCueIndex < _cueTimestamps.Count && 
-                _episodeTimer >= _cueTimestamps[_currentCueIndex])
+            // Check if we need to trigger the cue
+            if (!_cueTriggered && _episodeTimer >= _cueTimestamp)
             {
                 TriggerCue();
-                _currentCueIndex++;
             }
             
             // Default reward is zero
             _reward = 0f;
             
-            // Primary reward logic for correct responses
-            if (_isInResponseWindow)
+            // If the movement has already been completed, keep the hand at rest position
+            if (_movementCompleted)
             {
-                // Check if time window has expired
-                if (Time.time > _responseWindowEndTime)
+                // Keep enforcing rest position
+                if (_interactionPointTransform != null && 
+                    Vector3.Distance(_interactionPointTransform.position, _restPosition) > movementThreshold)
                 {
-                    // Failed to respond in time
-                    _isInResponseWindow = false;
-                    _totalResponses++;
-                    _missedTouches++;
-                    
-                    // Small negative reward for missed response
-                    if (useDenseReward)
-                        _reward -= missedResponsePenalty;
-                    
-                    UpdateSuccessMetrics();
-                    
-                    // Hide target after missed response
-                    SetTargetVisible(false);
+                    ResetHandPosition();
                 }
-                else
-                {
-                    bool isInsideTarget = IsInsideTarget();
-                    
-                    // If the agent touches the target during the response window, give reward
-                    if (isInsideTarget)
-                    {
-                        // Record correct response (just once per cue)
-                        if (_isInResponseWindow)
-                        {
-                            _correctResponses++;
-                            _successfulTouches++;
-                            
-                            // Update Points for whacamole compatibility
-                            _logDict["Points"] = _correctResponses;
-                            _reward = (_correctResponses - _previousPoints) * 10;
-                            _previousPoints = _correctResponses;
-                            
-                            _isInResponseWindow = false;
-                            _totalResponses++;
-                            UpdateSuccessMetrics();
-                            
-                            // Hide target after successful touch
-                            SetTargetVisible(false);
-                        }
-                    }
-                }
+                return; // Skip all other movement processing
             }
             
-            // Add dense spatial reward component if enabled
-            if (useDenseReward)
+            // Handle movement detection and rewards
+            if (_interactionPointTransform != null)
             {
-                // Distance reward
-                _distanceReward = CalculateDistanceReward();
-                _reward += _distanceReward;
-                _logDict["DistanceReward"] = _distanceReward;
+                Vector3 currentPos = _interactionPointTransform.position;
+                Vector3 movement = currentPos - _initialHandPosition;
                 
-                // Unsuccessful contact reward (when not in response window)
-                if (_interactionPointTransform != null && !_isInResponseWindow && targetObject != null)
+                // Before cue is triggered - check for early movement
+                if (!_cueTriggered && !_earlyMovementDetected)
                 {
-                    // Check if close to but not inside target
-                    float distance = Vector3.Distance(_interactionPointTransform.position, targetObject.transform.position);
-                    float targetRadius = targetSize / 2.0f;
-                    if (distance < targetRadius * 1.5f && distance >= targetRadius)
+                    if (Mathf.Abs(movement.z) > movementThreshold)
                     {
-                        // Calculate velocity (simplified)
-                        Vector3 currentPos = _interactionPointTransform.position;
-                        Vector3 velocity = Vector3.zero;
+                        // Penalize early movement - only apply once
+                        _reward -= earlyMovementPenalty;
+                        _earlyMovementDetected = true;
+                        _earlyMovements++;
+                        Debug.Log($"Early movement detected! Z-movement: {movement.z:F2}m");
                         
-                        if (_lastHandPosition != Vector3.zero)
-                        {
-                            velocity = (currentPos - _lastHandPosition) / Time.deltaTime;
-                        }
-                        
-                        _unsuccessfulContactReward = velocity.magnitude * 0.01f;
-                        _reward += _unsuccessfulContactReward;
-                        _logDict["RewardUnsuccessfulContact"] = _unsuccessfulContactReward;
-                    }
-                    else
-                    {
-                        _logDict["RewardUnsuccessfulContact"] = 0.0f;
+                        // Update metrics
+                        UpdateSuccessMetrics();
                     }
                 }
-                
-                // Calculate effort cost
-                if (_interactionPointTransform != null)
+                // After cue is triggered - check for successful movement
+                else if (_cueTriggered && !_movementCompleted)
                 {
-                    Vector3 currentPos = _interactionPointTransform.position;
-                    if (_lastHandPosition != Vector3.zero)
+                    // Check if movement in z direction meets requirement
+                    if (movement.z >= requiredMovementDistance)
                     {
-                        Vector3 movement = currentPos - _lastHandPosition;
-                        _effortCost = movement.magnitude * 0.05f;
-                        _lastHandPosition = currentPos;
+                        // Success! Movement completed
+                        _movementCompleted = true;
+                        _correctResponses++;
+                        
+                        // Give reward for completion
+                        _reward += successReward;
+                        _logDict["Points"] = _correctResponses;
+                        
+                        _totalResponses++;
+                        UpdateSuccessMetrics();
+                        
+                        Debug.Log($"Movement task completed! Moved {movement.z:F2}m in Z direction");
+                        
+                        // Reset hand position 
+                        ResetHandPosition();
+                        
+                        // End the episode immediately on success
+                        EndEpisode();
                     }
-                    else
-                    {
-                        _effortCost = 0.0f;
-                        _lastHandPosition = _interactionPointTransform.position;
-                    }
-                    
-                    _logDict["EffortCost"] = _effortCost;
                 }
             }
             
@@ -264,26 +215,20 @@ namespace UserInTheBox
                 EndEpisode();
             }
         }
-
-        // Calculate distance-based reward to encourage proximity to target
-        private float CalculateDistanceReward()
+        
+        // Update the ResetHandPosition method
+        private void ResetHandPosition()
         {
-            if (_interactionPointTransform == null || targetObject == null)
-                return 0f;
-                
-            // Calculate distance between hand and target
-            float distance = Vector3.Distance(_interactionPointTransform.position, targetObject.transform.position);
-            
-            // Convert to a reward using an exponential decay function
-            // This gives higher rewards for being closer to the target
-            return _distRewardFunc(distance);
-        }
-
-        private float _distRewardFunc(float distance)
-        {
-            // Using the Whacamole formulation: (exp(-10*dist)-1)/10
-            // This gives a steeper reward curve that approaches 0 asymptotically
-            return (float)(Math.Exp(-10 * distance) - 1) / 10;
+            if (_interactionPointTransform != null)
+            {
+                // Force the controller back to the initial rest position
+                _interactionPointTransform.position = _restPosition;
+                Debug.Log($"Hand position reset to {_restPosition}");
+            }
+            else
+            {
+                Debug.LogWarning("Cannot reset hand position - interaction point not found");
+            }
         }
         
         public override void UpdateIsFinished()
@@ -301,103 +246,66 @@ namespace UserInTheBox
             // Reset internal state
             InitialiseReward();
             
-            // Generate cue events
-            GenerateCueEvents();
+            // Generate a new cue time for this episode
+            GenerateCueTime();
             
-            // Position the target but keep it hidden until first cue
-            PositionTarget();
-            SetTargetVisible(false);
+            // Reset hand position
+            ResetHandPosition();
             
             // Start episode
             _isRunning = true;
-            _currentCueIndex = 0;
             _episodeTimer = 0f;
             
-            // Reset logging dictionary - only the five required keys
+            // Reset logging dictionary
             _logDict["Points"] = 0;
-            _logDict["RewardUnsuccessfulContact"] = 0.0f;
-            _logDict["DistanceReward"] = 0.0f;
-            _logDict["EffortCost"] = 0.0f;
             _logDict["failrateTarget0"] = 0.0f;
 
-            Debug.Log("Audio-Only Temporal Task Reset");
+            Debug.Log($"New episode started - Cue will trigger at {_cueTimestamp:F2}s");
         }
         
-        private void GenerateCueEvents()
+        private void GenerateCueTime()
         {
-            _cueTimestamps.Clear();
-            float currentTime = minCueInterval; // Start with initial delay
-            
-            for (int i = 0; i < cuesToGenerate; i++)
-            {
-                currentTime += UnityEngine.Random.Range(minCueInterval, maxCueInterval);
-                
-                if (currentTime >= episodeLength)
-                    break;
-                
-                _cueTimestamps.Add(currentTime);
-            }
-
-            Debug.Log("Generated " + _cueTimestamps.Count + " audio cues for the episode");
+            // Generate a single random cue time
+            _cueTimestamp = UnityEngine.Random.Range(minCueTime, maxCueTime);
         }
         
         private void TriggerCue()
         {
-            if (audioCueSound != null && _audioSource != null)
+            if (audioCueSound == null)
             {
-                _audioSource.PlayOneShot(audioCueSound, audioVolume);
-                Debug.Log("Playing audio cue at time " + _episodeTimer);
+                Debug.LogError("No audio clip assigned to audioCueSound!");
+                return;
             }
             
-            SetTargetVisible(true);
-            PositionTarget();
+            if (_audioSource == null)
+            {
+                Debug.LogError("No AudioSource available!");
+                return;
+            }
             
-            _isInResponseWindow = true;
-            _responseWindowEndTime = Time.time + responseTimeWindow;
+            // Play the sound with explicit parameters for debugging
+            _audioSource.clip = audioCueSound;
+            _audioSource.volume = audioVolume;
+            _audioSource.Play();
+            
+            Debug.Log($"Attempting to play audio cue at time {_episodeTimer:F2}s (clip length: {audioCueSound.length}s)");
+            
+            _cueTriggered = true;
         }
         
         private void EndEpisode()
         {
             _isRunning = false;
             
-            Debug.Log("Temporal Task Episode ended - Correct responses: " + _correctResponses + 
-                      "/" + _totalResponses + " (" + (_totalResponses > 0 ? (float)_correctResponses / _totalResponses * 100 : 0) + "%)");
-        }
-        
-        private bool IsInsideTarget()
-        {
-            if (_interactionPointTransform == null || targetObject == null)
-                return false;
-                
-            float distance = Vector3.Distance(_interactionPointTransform.position, targetObject.transform.position);
-            float targetRadius = targetSize / 2.0f;
-            return distance < targetRadius;
+            Debug.Log($"Episode ended - Successful movements so far: {_correctResponses}/{_totalResponses + _earlyMovements} " +
+                      $"(Early movements: {_earlyMovements})");
         }
         
         private void UpdateSuccessMetrics()
         {
-            _logDict["failrateTarget0"] = _totalResponses > 0 ? (float)_missedTouches / _totalResponses : 0.0f;
-        }
-
-        public void PositionTarget()
-        {
-            if (targetObject != null)
-            {
-                targetObject.transform.position = targetPosition;
-                
-                targetObject.transform.localScale = Vector3.one * targetSize;
-                
-                Debug.Log($"Target positioned at {targetPosition} with size {targetSize}");
-            }
-        }
-
-        private void SetTargetVisible(bool visible)
-        {
-            if (targetObject != null && _targetRenderer != null)
-            {
-                _targetRenderer.enabled = visible;
-                Debug.Log($"Target visibility set to {visible}");
-            }
+            int failures = _totalResponses - _correctResponses + _earlyMovements;
+            int attempts = _totalResponses + _earlyMovements;
+            _logDict["failrateTarget0"] = attempts > 0 ? (float)failures / attempts : 0.0f;
         }
     }
 }
