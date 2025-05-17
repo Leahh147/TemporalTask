@@ -137,4 +137,6 @@ The environment tracks and logs the following:
 
 This environment is a toy project. It is designed for **biomechanically realistic movement training** and tests **timed audio response**, a critical component of more complex interactive tasks. The result provides a theoretical foundation for the timed audio cues in other VR applications, such as **Whac-A-Mole**.
 
+If you have any questions, please feel free to contact Jiahao He at [jh2425@cam.ac.uk](mailto:jh2425@cam.ac.uk).
+
 ---
