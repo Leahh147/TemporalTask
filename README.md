@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **Temporal Task** is a reinforcement learning environment that requires agents to perform precisely timed movements in response to audio cues. This task is designed to develop and test an agent's ability to:
+The **Temporal Task** is a Unity-based game that requires an RL agents to perform precisely timed movements in response to audio cues. This task is designed to develop and test an agent's ability to:
 
 * **Wait patiently** for an audio cue
 * **React promptly** when the cue is given
