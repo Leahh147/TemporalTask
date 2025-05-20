@@ -23,7 +23,7 @@ The task requires both **inhibitory control** (waiting for the cue) and **precis
 
 ### Audio Cue
 
-* Plays **once per episode** at a **random time between 1–3 seconds**
+* Plays **once per episode** at a **random time between 0–3 seconds**
 * **Mono amplitude-based** for clear signal detection
 
 ---
