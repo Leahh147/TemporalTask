@@ -48,7 +48,8 @@ The task requires both **inhibitory control** (waiting for the cue) and **precis
 
 * **Success Reward:** +10 points for completing the required movement
 * **Early Movement Penalty:** -5 points for moving before the audio cue
-* **Sparse Rewards Only:** No dense rewards provided (success/failure only)
+* **Failure Penalty:** -10 for not completing the required movement
+> Note that the failure and early movements apply penalty independently.
 
 ---
 
