@@ -46,10 +46,20 @@ The task requires both **inhibitory control** (waiting for the cue) and **precis
 
 ## Reward Structure
 
-* **Success Reward:** +10 points for completing the required movement
-* **Early Movement Penalty:** -5 points for moving before the audio cue
-* **Failure Penalty:** -3 for not completing the required movement
-> Note that the failure and early movements apply penalty independently.
+* **Timing Success Reward:** +10 points for waiting until the audio cue
+* **Movement Success Reward:** +5 points for completing the required movement
+* **Early Movement Penalty:** -5 points for moving before the audio cue (applied once per episode)
+
+### Reward Mechanism Table
+
+| Scenario | Timing | Movement | Total Reward |
+|----------|--------|----------|--------------|
+| Correct timing + Movement success | +10 | +5 | **+15** |
+| Correct timing + No movement success | +10 | 0 | **+10** |
+| Early movement + Movement success | -5 | +5 | **0** |
+| Early movement + No movement success | -5 | 0 | **-5** |
+
+> Note: Each subtask is rewarded or penalized independently. The early movement penalty is applied only once per episode, regardless of how many early movements are detected.
 
 ---
 
