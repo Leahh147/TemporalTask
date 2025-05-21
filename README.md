@@ -17,13 +17,13 @@ The task requires both **inhibitory control** (waiting for the cue) and **precis
 ### Basic Parameters
 
 * **Episode Length:** 5 seconds
-* **Cue Timing:** Random between 0–3 seconds into the episode
+* **Cue Timing:** Random between 1–3 seconds into the episode
 * **Required Movement:** 0.4 meters in the **positive Z direction**
 * **Movement Threshold:** 0.001 m (movements above this threshold are detected)
 
 ### Audio Cue
 
-* Plays **once per episode** at a **random time between 0–3 seconds**
+* Plays **once per episode** at a **random time between 1–3 seconds**
 * **Mono amplitude-based** for clear signal detection
 
 ---
