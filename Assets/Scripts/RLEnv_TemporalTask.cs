@@ -9,7 +9,7 @@ namespace UserInTheBox
     {
         [Header("Task Parameters")]
         public float episodeLength = 5f;       // 5 second episodes
-        public float minCueTime = 0f;          // Earliest cue at 0 second
+        public float minCueTime = 1f;          // Earliest cue at 0 second
         public float maxCueTime = 3f;          // Latest cue at 3 seconds
         public float requiredMovementDistance = 0.4f; // Required Z-direction movement
         public float movementThreshold = 0.001f; // Threshold for detecting early movement
@@ -19,8 +19,10 @@ namespace UserInTheBox
         public float audioVolume = 0.7f;
 
         [Header("Reward Settings")]
-        public float successReward = 10f;        // Reward for successful movement
-        public float earlyMovementPenalty = 5f;  // Penalty for moving before cue
+        public float timingSuccessReward = 10f;      // Reward for waiting until cue (first subtask)
+        public float movementSuccessReward = 5f;    // Reward for completing movement (second subtask)
+        public float earlyMovementPenalty = 5f;     // Penalty for moving before cue
+        private bool _timingRewardGiven = false;    // Track if timing reward was already given
         
         // Internal state
         private float _cueTimestamp;
@@ -123,6 +125,7 @@ namespace UserInTheBox
             _movementCompleted = false;
             _earlyMovementDetected = false;
             _episodeTimer = 0f;
+            _timingRewardGiven = false; // Reset timing reward flag
             
             if (_interactionPointTransform != null)
             {
@@ -148,18 +151,6 @@ namespace UserInTheBox
             // Default reward is zero
             _reward = 0f;
             
-            // If the movement has already been completed, keep the hand at rest position
-            if (_movementCompleted)
-            {
-                // Keep enforcing rest position
-                if (_interactionPointTransform != null && 
-                    Vector3.Distance(_interactionPointTransform.position, _restPosition) > movementThreshold)
-                {
-                    ResetHandPosition();
-                }
-                return; // Skip all other movement processing
-            }
-            
             // Handle movement detection and rewards
             if (_interactionPointTransform != null)
             {
@@ -167,32 +158,49 @@ namespace UserInTheBox
                 Vector3 movement = currentPos - _initialHandPosition;
                 
                 // Before cue is triggered - check for early movement
-                if (!_cueTriggered && !_earlyMovementDetected)
+                if (!_cueTriggered)
                 {
-                    if (Mathf.Abs(movement.z) > movementThreshold)
+                    if (Mathf.Abs(movement.z) > movementThreshold && !_earlyMovementDetected)
                     {
-                        // Penalize early movement - only apply once
+                        // Penalize early movement - only once per episode
                         _reward -= earlyMovementPenalty;
                         _earlyMovementDetected = true;
                         _earlyMovements++;
                         Debug.Log($"Early movement detected! Z-movement: {movement.z:F2}m");
-                        
+
                         // Update metrics
                         UpdateSuccessMetrics();
+                        
+                        // Reset hand position 
+                        ResetHandPosition();
+                    }
+                    else if (_earlyMovementDetected)
+                    {
+                        // Keep enforcing rest position without additional penalties
+                        ResetHandPosition();
                     }
                 }
-                // After cue is triggered - check for successful movement
+                // After cue is triggered - give timing reward and check movement distance
                 else if (_cueTriggered && !_movementCompleted)
                 {
-                    // Check if movement in z direction meets requirement
+                    // FIRST SUBTASK: Reward for correct timing (waiting for cue)
+                    // Only give this reward once per episode and only if no early movement
+                    if (!_timingRewardGiven && !_earlyMovementDetected)
+                    {
+                        _reward += timingSuccessReward;
+                        _timingRewardGiven = true;
+                        Debug.Log($"First subtask complete: Timing success reward: +{timingSuccessReward}");
+                    }
+                    
+                    // SECOND SUBTASK: Check movement distance requirement
                     if (movement.z >= requiredMovementDistance)
                     {
                         // Success! Movement completed
                         _movementCompleted = true;
                         _correctResponses++;
                         
-                        // Give reward for completion
-                        _reward += successReward;
+                        // Give reward for movement completion (second subtask)
+                        _reward += movementSuccessReward;
                         _logDict["Points"] = _correctResponses;
                         
                         _totalResponses++;
@@ -203,7 +211,7 @@ namespace UserInTheBox
                         // Reset hand position 
                         ResetHandPosition();
                         
-                        // End the episode immediately on success
+                        // End the episode immediately on full success
                         EndEpisode();
                     }
                 }
