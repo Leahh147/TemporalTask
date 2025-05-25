@@ -138,7 +138,7 @@ namespace UserInTheBox
         {
             if (!_isRunning)
                 return;
-                
+            
             // Update timer
             _episodeTimer += Time.deltaTime;
             
@@ -183,36 +183,47 @@ namespace UserInTheBox
                 // After cue is triggered - give timing reward and check movement distance
                 else if (_cueTriggered && !_movementCompleted)
                 {
-                    // FIRST SUBTASK: Reward for correct timing (waiting for cue)
-                    // Only give this reward once per episode and only if no early movement
-                    if (!_timingRewardGiven && !_earlyMovementDetected)
+                    // If the agent moved early (before cue), it fails the timing subtask
+                    // We don't need to check for new early movements anymore since the cue has played
+                    if (!_earlyMovementDetected)
                     {
-                        _reward += timingSuccessReward;
-                        _timingRewardGiven = true;
-                        Debug.Log($"First subtask complete: Timing success reward: +{timingSuccessReward}");
+                        // FIRST SUBTASK: Reward for correct timing (waiting for cue)
+                        // Only give this reward once per episode
+                        if (!_timingRewardGiven)
+                        {
+                            _reward += timingSuccessReward;
+                            _timingRewardGiven = true;
+                            Debug.Log($"First subtask complete: Timing success reward: +{timingSuccessReward}");
+                        }
+                        
+                        // SECOND SUBTASK: Check movement distance requirement
+                        if (movement.z >= requiredMovementDistance)
+                        {
+                            // Success! Movement completed
+                            _movementCompleted = true;
+                            _correctResponses++;
+                            
+                            // Give reward for movement completion (second subtask)
+                            _reward += movementSuccessReward;
+                            _logDict["Points"] = _correctResponses;
+                            
+                            _totalResponses++;
+                            UpdateSuccessMetrics();
+                            
+                            Debug.Log($"Movement task completed! Moved {movement.z:F2}m in Z direction");
+                            
+                            // Reset hand position 
+                            ResetHandPosition();
+                            
+                            // End the episode immediately on full success
+                            EndEpisode();
+                        }
                     }
-                    
-                    // SECOND SUBTASK: Check movement distance requirement
-                    if (movement.z >= requiredMovementDistance)
+                    else
                     {
-                        // Success! Movement completed
-                        _movementCompleted = true;
-                        _correctResponses++;
-                        
-                        // Give reward for movement completion (second subtask)
-                        _reward += movementSuccessReward;
-                        _logDict["Points"] = _correctResponses;
-                        
-                        _totalResponses++;
-                        UpdateSuccessMetrics();
-                        
-                        Debug.Log($"Movement task completed! Moved {movement.z:F2}m in Z direction");
-                        
-                        // Reset hand position 
+                        // If there was early movement before the cue, continue to enforce rest position
+                        // The agent has already failed the timing subtask
                         ResetHandPosition();
-                        
-                        // End the episode immediately on full success
-                        EndEpisode();
                     }
                 }
             }
