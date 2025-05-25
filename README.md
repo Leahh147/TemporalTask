@@ -56,10 +56,10 @@ The task requires both **inhibitory control** (waiting for the cue) and **precis
 |----------|--------|----------|--------------|
 | Correct timing + Movement success | +10 | +5 | **+15** |
 | Correct timing + No movement success | +10 | 0 | **+10** |
-| Early movement + Movement success | -5 | +5 | **0** |
+| Early movement + Movement success | -5 | **0** | **-5** |
 | Early movement + No movement success | -5 | 0 | **-5** |
 
-> Note: Each subtask is rewarded or penalized independently. The early movement penalty is applied only once per episode, regardless of how many early movements are detected.
+> Note: The subtasks are sequential, meaning that the successful movement reward is only applied when the timing is correct.
 
 ---
 
