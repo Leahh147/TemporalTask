@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UserInTheBox;
+using TemporalTask.Audio;
 
 namespace UserInTheBox
 {
@@ -82,6 +83,7 @@ namespace UserInTheBox
                 _audioSource.playOnAwake = false; // Ensure this is false
                 _audioSource.loop = false;        // Ensure this is false
                 _audioSource.volume = 1.0f;       // Set a default volume
+                _audioSource.pitch = Time.timeScale;
                 
                 Debug.Log("Created new AudioSource with playOnAwake=false");
             }
@@ -89,6 +91,7 @@ namespace UserInTheBox
             {
                 _audioSource.playOnAwake = false;
                 _audioSource.loop = false;
+                _audioSource.pitch = Time.timeScale;
                 Debug.Log("Using existing AudioSource, set playOnAwake=false");
             }
             
