@@ -107,14 +107,14 @@ No additional command-line arguments are required for these defaults. The random
 
 ### Train and Evaluate
 
-To **train** and **evaluate** the Temporal Task environment, use the following commands:
+To **train** and **evaluate** the Temporal Task environment, find corresponding config files and use the following commands:
 
 ```bash
-python uitb/train/trainer.py uitb/config/mobl_arms_temporal_task_linux_train_2.yaml
+python uitb/train/trainer.py uitb/config/mobl_arms_temporal_task_linux_train_8.yaml
 ```
 
 ```bash
-python uitb/test/evaluator.py simulators/mobl_arms_temporal_task_linux_train_2 --record --num_episodes 10 --random_seed 1024
+python uitb/test/evaluator.py simulators/mobl_arms_temporal_task_linux_train_8 --record --num_episodes 10 --random_seed 1024
 ```
 
 ---
