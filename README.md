@@ -114,11 +114,8 @@ python uitb/train/trainer.py uitb/config/mobl_arms_temporal_task_linux_train_2.y
 ```
 
 ```bash
-python uitb/test/evaluator.py simulators/mobl_arms_temporal_task_linux_train_2 --record --num_episodes 10
+python uitb/test/evaluator.py simulators/mobl_arms_temporal_task_linux_train_2 --record --num_episodes 10 --random_seed 1024
 ```
-
-> 🔧 *Note: Seed options will be introduced soon to support reproducibility.*
-
 
 ---
 
