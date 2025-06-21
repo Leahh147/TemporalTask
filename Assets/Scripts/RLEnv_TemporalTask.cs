@@ -267,6 +267,11 @@ namespace UserInTheBox
         {
             // Reset internal state
             InitialiseReward();
+
+            // Reset tracking variables
+            _correctResponses = 0;
+            _totalResponses = 0;
+            _earlyMovements = 0;
             
             // Generate a new cue time for this episode
             GenerateCueTime();
